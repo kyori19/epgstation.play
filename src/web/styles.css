@@ -1,0 +1,103 @@
+:root {
+  color-scheme: dark;
+  font-family: "Noto Sans JP", sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #0b1020;
+  color: #edf2ff;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  border-right: 1px solid #27304a;
+  padding: 16px;
+}
+
+.note {
+  font-size: 12px;
+  color: #9ba7c8;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.list button,
+.toolbar button,
+table button {
+  width: 100%;
+  border: 1px solid #3d4e78;
+  background: #1d2640;
+  color: #edf2ff;
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.list button.active {
+  border-color: #78a9ff;
+}
+
+.content {
+  padding: 16px;
+  display: grid;
+  gap: 20px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th,
+td {
+  border-bottom: 1px solid #27304a;
+  text-align: left;
+  padding: 8px;
+}
+
+.row-active {
+  background: #1c2644;
+}
+
+.badge {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #ffacac;
+}
+
+.error {
+  color: #ff9696;
+}
+
+.status {
+  color: #9fd6a3;
+}
+
+.player {
+  width: 100%;
+  max-height: 70vh;
+  background: #000;
+}

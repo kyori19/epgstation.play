@@ -1,0 +1,29 @@
+{
+  "name": "epgstation.play",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:worker": "wrangler dev",
+    "build:web": "vite build",
+    "build": "npm run build:web && tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "deploy": "npm run build:web && wrangler deploy",
+    "d1:migrate:local": "wrangler d1 migrations apply epgstation_play --local",
+    "d1:migrate:remote": "wrangler d1 migrations apply epgstation_play --remote"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260501.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.3",
+    "vite": "^6.2.0",
+    "wrangler": "^4.14.4"
+  }
+}

@@ -1,0 +1,25 @@
+name = "epgstation-play"
+main = "src/worker/index.ts"
+compatibility_date = "2026-05-07"
+
+# 本番では同一ドメインの /.play/* にルーティングしてください。
+# ローカル/手動 deploy ではこの値を実環境に置換して使用してください。
+# CI/CD では deploy workflow が Secrets.CLOUDFLARE_PLAY_ROUTE で置換します。
+routes = [
+  "REPLACE_WITH_YOUR_PLAY_ROUTE"
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "epgstation_play"
+# CI/CD では deploy workflow がこの値を
+# Secrets.CLOUDFLARE_D1_DATABASE_ID で置換してからデプロイします。
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[assets]
+binding = "ASSETS"
+directory = "./dist/client"
+
+[vars]
+EPGSTATION_API_BASE = "/api"
