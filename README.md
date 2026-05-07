@@ -69,8 +69,8 @@ npm run deploy
 
 以下の workflow を追加しています。
 
-- `ci.yml`: PR と `main` push で `npm ci` + `npm run build`
-- `deploy.yml`: `main` push と `workflow_dispatch` で Cloudflare Workers へデプロイ
+- `ci.yml`: PR と `master` push で `npm ci` + `npm run build`
+- `deploy.yml`: `master` push と `workflow_dispatch` で Cloudflare Workers へデプロイ
 
 ### 必要な Secrets
 
@@ -83,9 +83,9 @@ Repository または Environment (`production`) に以下を設定してくだ�
 
 ### デプロイ運用
 
-- 自動デプロイ: `main` へ push で実行
+- 自動デプロイ: `master` へ push で実行
 - 手動デプロイ: Actions から `workflow_dispatch` を実行
-- D1 マイグレーション: `main` push 時は自動実行、手動実行時は `apply_migrations=true` の場合のみ実行
+- D1 マイグレーション: `master` push 時は自動実行、手動実行時は `apply_migrations=true` の場合のみ実行
 - deploy workflow は `wrangler.toml` の `database_id` プレースホルダを `CLOUDFLARE_D1_DATABASE_ID` で置換してから実行
 - deploy workflow は `wrangler.toml` の `routes` プレースホルダを `CLOUDFLARE_PLAY_ROUTE` で置換してから実行
 
