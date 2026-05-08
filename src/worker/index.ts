@@ -32,6 +32,39 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   const method = request.method.toUpperCase();
   const pathname = url.pathname;
 
+  if (pathname === `${API_PREFIX}/resume` && method === "GET") {
+    const recordingIds = url.searchParams
+      .getAll("recordingId")
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0);
+    if (recordingIds.length === 0) {
+      return jsonResponse({ resumes: {} });
+    }
+
+    const placeholders = recordingIds.map(() => "?").join(", ");
+    const rows = await env.DB.prepare(
+      `SELECT recording_id, position_sec, duration_sec, watched_ratio, updated_at
+       FROM resume_positions
+       WHERE recording_id IN (${placeholders})`,
+    )
+      .bind(...recordingIds)
+      .all<ResumeRow>();
+
+    const resumeMap: Record<
+      string,
+      { positionSec: number; durationSec: number; watchedRatio: number; updatedAt: number } | null
+    > = Object.fromEntries(recordingIds.map((recordingId) => [recordingId, null]));
+    for (const row of rows.results) {
+      resumeMap[row.recording_id] = {
+        positionSec: row.position_sec,
+        durationSec: row.duration_sec,
+        watchedRatio: row.watched_ratio,
+        updatedAt: row.updated_at,
+      };
+    }
+    return jsonResponse({ resumes: resumeMap });
+  }
+
   const resumeMatch = pathname.match(/^\/\.play\/api\/resume\/([^/]+)$/);
   if (resumeMatch) {
     const recordingId = decodeURIComponent(resumeMatch[1]);

@@ -10,19 +10,27 @@ type Route =
 type RecordingItem = {
   recordingId: string;
   title: string;
+  description: string;
   recordedAt: string;
   recordedAtMs: number;
   durationSec: number;
   videoUrl: string | null;
+  thumbnailUrl: string | null;
+};
+
+type ResumeEntry = {
+  positionSec: number;
+  durationSec: number;
+  watchedRatio: number;
+  updatedAt: number;
 };
 
 type ResumePayload = {
-  resume: {
-    positionSec: number;
-    durationSec: number;
-    watchedRatio: number;
-    updatedAt: number;
-  } | null;
+  resume: ResumeEntry | null;
+};
+
+type ResumeBatchPayload = {
+  resumes?: Record<string, ResumeEntry | null>;
 };
 
 type RecordedResponse = {
@@ -74,6 +82,7 @@ export function App() {
 
 function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) => void }) {
   const [recentRecordings, setRecentRecordings] = useState<RecordingItem[]>([]);
+  const [resumeByRecordingId, setResumeByRecordingId] = useState<Record<string, ResumeEntry | null>>({});
   const [loadingHome, setLoadingHome] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -84,6 +93,12 @@ function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) =
       try {
         const recent = await fetchRecentRecordings();
         setRecentRecordings(recent);
+        try {
+          const resumeMap = await fetchResumeBatch(recent.map((item) => item.recordingId));
+          setResumeByRecordingId(resumeMap);
+        } catch {
+          setResumeByRecordingId({});
+        }
       } catch {
         setErrorMessage("一覧の取得に失敗しました。EPGStation API 設定を確認してください。");
       } finally {
@@ -118,8 +133,22 @@ function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) =
                     onClick={() => onOpenRecording(recording.recordingId)}
                     disabled={!recording.videoUrl}
                   >
-                    <span className="title">{recording.title}</span>
-                    <span className="meta">{formatDate(recording.recordedAt)}</span>
+                    {recording.thumbnailUrl ? (
+                      <img
+                        className="list-item-thumbnail"
+                        src={recording.thumbnailUrl}
+                        alt={`${recording.title} のサムネイル`}
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="list-item-thumbnail placeholder">No Image</div>
+                    )}
+                    <div className="list-item-content">
+                      <span className="title">{recording.title}</span>
+                      <span className="meta">{formatDate(recording.recordedAt)}</span>
+                      <span className="meta">{formatResumeStatus(resumeByRecordingId[recording.recordingId])}</span>
+                      <span className="description-snippet">{toSnippet(recording.description)}</span>
+                    </div>
                   </button>
                 </li>
               ))}
@@ -322,12 +351,30 @@ async function fetchRecordingDetail(recordingId: string): Promise<RecordingItem>
   return normalized;
 }
 
+async function fetchResumeBatch(recordingIds: string[]): Promise<Record<string, ResumeEntry | null>> {
+  if (recordingIds.length === 0) {
+    return {};
+  }
+  const query = new URLSearchParams();
+  for (const recordingId of recordingIds) {
+    query.append("recordingId", recordingId);
+  }
+
+  const response = await fetch(`/.play/api/resume?${query.toString()}`);
+  if (!response.ok) {
+    throw new Error(`resume API failed: ${response.status}`);
+  }
+  const payload = (await response.json()) as ResumeBatchPayload;
+  return isRecord(payload.resumes) ? payload.resumes : {};
+}
+
 function normalizeRecording(value: unknown): RecordingItem | null {
   if (!isRecord(value)) {
     return null;
   }
   const recordingId = toStringSafe(value.id);
   const title = toStringSafe(value.name) ?? "無題";
+  const description = toStringSafe(value.description) ?? "";
   const startAt = toNumber(value.startAt);
   const endAt = toNumber(value.endAt);
   if (!recordingId || startAt === null) {
@@ -345,15 +392,20 @@ function normalizeRecording(value: unknown): RecordingItem | null {
     ) ?? videoFiles.find((item) => isRecord(item) && toNumber(item.id) !== null);
   const videoFileId = preferredVideo && isRecord(preferredVideo) ? toNumber(preferredVideo.id) : null;
   const videoUrl = videoFileId !== null ? `/api/videos/${videoFileId}` : null;
+  const thumbnails = Array.isArray(value.thumbnails) ? value.thumbnails : [];
+  const thumbnailId = thumbnails.map((item) => toNumber(item)).find((item): item is number => item !== null) ?? null;
+  const thumbnailUrl = thumbnailId !== null ? `/api/thumbnails/${thumbnailId}` : null;
 
   const durationSec = endAt !== null && endAt >= startAt ? (endAt - startAt) / 1000 : 0;
   return {
     recordingId,
     title,
+    description,
     recordedAt: new Date(startAt).toISOString(),
     recordedAtMs: startAt,
     durationSec,
     videoUrl,
+    thumbnailUrl,
   };
 }
 
@@ -379,6 +431,39 @@ function routeToPath(basePath: string, route: Route): string {
 
 function formatDate(isoDate: string): string {
   return new Date(isoDate).toLocaleString("ja-JP");
+}
+
+function formatResumeStatus(resume: ResumeEntry | null | undefined): string {
+  if (!resume) {
+    return "再生位置: 未視聴";
+  }
+  const watched = resume.watchedRatio >= 0.95 || resume.positionSec >= Math.max(resume.durationSec - 5, 0);
+  if (watched) {
+    return "再生位置: 視聴済み";
+  }
+  if (resume.durationSec <= 0) {
+    return `再生位置: ${formatTime(Math.floor(resume.positionSec))}`;
+  }
+  return `再生位置: ${formatTime(Math.floor(resume.positionSec))} / ${formatTime(Math.floor(resume.durationSec))}`;
+}
+
+function toSnippet(description: string): string {
+  if (description.trim().length === 0) {
+    return "説明: なし";
+  }
+  const compact = description.replace(/\s+/g, " ").trim();
+  return compact.length > 90 ? `説明: ${compact.slice(0, 90)}…` : `説明: ${compact}`;
+}
+
+function formatTime(totalSec: number): string {
+  const safeSec = Math.max(0, totalSec);
+  const hour = Math.floor(safeSec / 3600);
+  const minute = Math.floor((safeSec % 3600) / 60);
+  const second = safeSec % 60;
+  if (hour > 0) {
+    return `${hour}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`;
+  }
+  return `${minute}:${String(second).padStart(2, "0")}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

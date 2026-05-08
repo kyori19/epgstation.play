@@ -85,7 +85,31 @@ button:disabled {
 
 .list-item {
   display: grid;
+  grid-template-columns: 192px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.list-item-thumbnail {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #101726;
+}
+
+.list-item-thumbnail.placeholder {
+  display: grid;
+  place-items: center;
+  border: 1px solid #27304a;
+  color: #9ba7c8;
+  font-size: 12px;
+}
+
+.list-item-content {
+  display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .title {
@@ -95,6 +119,12 @@ button:disabled {
 .meta {
   font-size: 12px;
   color: #9ba7c8;
+}
+
+.description-snippet {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #cdd6f4;
 }
 
 .error {
