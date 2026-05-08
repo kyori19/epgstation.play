@@ -201,6 +201,33 @@ button:disabled {
   min-height: 0;
 }
 
+.playback-playlist-section {
+  gap: 10px;
+}
+
+.playback-playlist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.toggle-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.toggle-line input {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.playback-list-item {
+  grid-template-columns: 160px minmax(0, 1fr);
+}
+
 .player {
   width: 100%;
   background: #000;
