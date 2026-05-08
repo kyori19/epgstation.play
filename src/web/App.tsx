@@ -45,12 +45,14 @@ type RuleResponse = {
 };
 
 export function App() {
-  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname));
   const basePath = useMemo(() => getBasePath(window.location.pathname), []);
+  const [route, setRoute] = useState<Route>(() =>
+    parseRoute(window.location.pathname, basePath),
+  );
 
   useEffect(() => {
     const onPopState = () => {
-      setRoute(parseRoute(window.location.pathname));
+      setRoute(parseRoute(window.location.pathname, basePath));
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -603,8 +605,10 @@ function normalizeRecording(value: unknown): RecordingItem | null {
   };
 }
 
-function parseRoute(pathname: string): Route {
-  const match = pathname.match(/\/play\/([^/]+)\/?$/);
+function parseRoute(pathname: string, basePath: string): Route {
+  const relativePath =
+    basePath && pathname.startsWith(basePath) ? pathname.slice(basePath.length) || "/" : pathname;
+  const match = relativePath.match(/^\/play\/([^/]+)\/?$/);
   if (match) {
     return { kind: "playback", recordingId: decodeURIComponent(match[1]) };
   }
@@ -612,7 +616,16 @@ function parseRoute(pathname: string): Route {
 }
 
 function getBasePath(pathname: string): string {
-  return pathname.startsWith("/.play") ? "/.play" : "";
+  const marker = "/.play";
+  const index = pathname.indexOf(marker);
+  if (index === -1) {
+    return "";
+  }
+  const endIndex = index + marker.length;
+  if (endIndex < pathname.length && pathname[endIndex] !== "/") {
+    return "";
+  }
+  return pathname.slice(0, endIndex);
 }
 
 function routeToPath(basePath: string, route: Route): string {
