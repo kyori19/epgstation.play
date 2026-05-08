@@ -329,7 +329,7 @@ function Player({
       if (!video.paused) {
         void saveResume();
       }
-    }, 10000);
+    }, 300000);
 
     return () => {
       video.removeEventListener("pause", onPause);
