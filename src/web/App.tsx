@@ -10,19 +10,27 @@ type Route =
 type RecordingItem = {
   recordingId: string;
   title: string;
+  description: string;
   recordedAt: string;
   recordedAtMs: number;
   durationSec: number;
   videoUrl: string | null;
+  thumbnailUrl: string | null;
+};
+
+type ResumeEntry = {
+  positionSec: number;
+  durationSec: number;
+  watchedRatio: number;
+  updatedAt: number;
 };
 
 type ResumePayload = {
-  resume: {
-    positionSec: number;
-    durationSec: number;
-    watchedRatio: number;
-    updatedAt: number;
-  } | null;
+  resume: ResumeEntry | null;
+};
+
+type ResumeBatchPayload = {
+  resumes?: Record<string, ResumeEntry | null>;
 };
 
 type RecordedResponse = {
@@ -74,6 +82,7 @@ export function App() {
 
 function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) => void }) {
   const [recentRecordings, setRecentRecordings] = useState<RecordingItem[]>([]);
+  const [resumeByRecordingId, setResumeByRecordingId] = useState<Record<string, ResumeEntry | null>>({});
   const [loadingHome, setLoadingHome] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -84,6 +93,12 @@ function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) =
       try {
         const recent = await fetchRecentRecordings();
         setRecentRecordings(recent);
+        try {
+          const resumeMap = await fetchResumeBatch(recent.map((item) => item.recordingId));
+          setResumeByRecordingId(resumeMap);
+        } catch {
+          setResumeByRecordingId({});
+        }
       } catch {
         setErrorMessage("一覧の取得に失敗しました。EPGStation API 設定を確認してください。");
       } finally {
@@ -110,19 +125,49 @@ function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) =
             <p>録画が見つかりません。</p>
           ) : (
             <ul className="list">
-              {recentRecordings.map((recording) => (
-                <li key={recording.recordingId}>
-                  <button
-                    type="button"
-                    className="list-item"
-                    onClick={() => onOpenRecording(recording.recordingId)}
-                    disabled={!recording.videoUrl}
-                  >
-                    <span className="title">{recording.title}</span>
-                    <span className="meta">{formatDate(recording.recordedAt)}</span>
-                  </button>
-                </li>
-              ))}
+              {recentRecordings.map((recording) => {
+                const resumeProgress = getResumeProgress(
+                  resumeByRecordingId[recording.recordingId],
+                  recording.durationSec,
+                );
+                return (
+                  <li key={recording.recordingId}>
+                    <button
+                      type="button"
+                      className="list-item"
+                      onClick={() => onOpenRecording(recording.recordingId)}
+                      disabled={!recording.videoUrl}
+                    >
+                      <div className="list-item-media">
+                        <div className="thumbnail-shell">
+                          {recording.thumbnailUrl ? (
+                            <img
+                              className="list-item-thumbnail"
+                              src={recording.thumbnailUrl}
+                              alt={`${recording.title} のサムネイル`}
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="list-item-thumbnail placeholder">No Image</div>
+                          )}
+                          <span className="thumbnail-time">{resumeProgress.timeText}</span>
+                          <div className="progress-track thumbnail-progress" aria-hidden="true">
+                            <span
+                              className="progress-fill"
+                              style={{ width: `${Math.round(resumeProgress.ratio * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="list-item-content">
+                        <span className="title">{recording.title}</span>
+                        <span className="meta">{formatDate(recording.recordedAt)}</span>
+                        <span className="description-snippet">{toSnippet(recording.description)}</span>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -322,12 +367,30 @@ async function fetchRecordingDetail(recordingId: string): Promise<RecordingItem>
   return normalized;
 }
 
+async function fetchResumeBatch(recordingIds: string[]): Promise<Record<string, ResumeEntry | null>> {
+  if (recordingIds.length === 0) {
+    return {};
+  }
+  const query = new URLSearchParams();
+  for (const recordingId of recordingIds) {
+    query.append("recordingId", recordingId);
+  }
+
+  const response = await fetch(`/.play/api/resume?${query.toString()}`);
+  if (!response.ok) {
+    throw new Error(`resume API failed: ${response.status}`);
+  }
+  const payload = (await response.json()) as ResumeBatchPayload;
+  return isRecord(payload.resumes) ? payload.resumes : {};
+}
+
 function normalizeRecording(value: unknown): RecordingItem | null {
   if (!isRecord(value)) {
     return null;
   }
   const recordingId = toStringSafe(value.id);
   const title = toStringSafe(value.name) ?? "無題";
+  const description = toStringSafe(value.description) ?? "";
   const startAt = toNumber(value.startAt);
   const endAt = toNumber(value.endAt);
   if (!recordingId || startAt === null) {
@@ -345,15 +408,20 @@ function normalizeRecording(value: unknown): RecordingItem | null {
     ) ?? videoFiles.find((item) => isRecord(item) && toNumber(item.id) !== null);
   const videoFileId = preferredVideo && isRecord(preferredVideo) ? toNumber(preferredVideo.id) : null;
   const videoUrl = videoFileId !== null ? `/api/videos/${videoFileId}` : null;
+  const thumbnails = Array.isArray(value.thumbnails) ? value.thumbnails : [];
+  const thumbnailId = thumbnails.map((item) => toNumber(item)).find((item): item is number => item !== null) ?? null;
+  const thumbnailUrl = thumbnailId !== null ? `/api/thumbnails/${thumbnailId}` : null;
 
   const durationSec = endAt !== null && endAt >= startAt ? (endAt - startAt) / 1000 : 0;
   return {
     recordingId,
     title,
+    description,
     recordedAt: new Date(startAt).toISOString(),
     recordedAtMs: startAt,
     durationSec,
     videoUrl,
+    thumbnailUrl,
   };
 }
 
@@ -379,6 +447,50 @@ function routeToPath(basePath: string, route: Route): string {
 
 function formatDate(isoDate: string): string {
   return new Date(isoDate).toLocaleString("ja-JP");
+}
+
+function getResumeProgress(
+  resume: ResumeEntry | null | undefined,
+  fallbackDurationSec: number,
+): { ratio: number; timeText: string } {
+  const durationSec = resume && resume.durationSec > 0 ? resume.durationSec : Math.max(0, fallbackDurationSec);
+  const positionSec = Math.max(0, resume?.positionSec ?? 0);
+  const timeText = durationSec > 0 ? `${formatTime(Math.floor(positionSec))} / ${formatTime(Math.floor(durationSec))}` : "0:00";
+  if (!resume) {
+    return { ratio: 0, timeText };
+  }
+  const watched = resume.watchedRatio >= 0.95 || positionSec >= Math.max(durationSec - 5, 0);
+  if (watched) {
+    return {
+      ratio: 1,
+      timeText: durationSec > 0 ? `${formatTime(Math.floor(durationSec))} / ${formatTime(Math.floor(durationSec))}` : timeText,
+    };
+  }
+  const ratio = durationSec > 0 ? clampNumber(positionSec / durationSec, 0, 1) : 0;
+  return { ratio, timeText };
+}
+
+function toSnippet(description: string): string {
+  if (description.trim().length === 0) {
+    return "説明なし";
+  }
+  const compact = description.replace(/\s+/g, " ").trim();
+  return compact.length > 90 ? `${compact.slice(0, 90)}…` : compact;
+}
+
+function formatTime(totalSec: number): string {
+  const safeSec = Math.max(0, totalSec);
+  const hour = Math.floor(safeSec / 3600);
+  const minute = Math.floor((safeSec % 3600) / 60);
+  const second = safeSec % 60;
+  if (hour > 0) {
+    return `${hour}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`;
+  }
+  return `${minute}:${String(second).padStart(2, "0")}`;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
