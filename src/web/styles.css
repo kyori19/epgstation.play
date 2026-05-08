@@ -98,14 +98,17 @@ button:disabled {
 .thumbnail-shell {
   position: relative;
   width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #101726;
 }
 
 .list-item-thumbnail {
   width: 100%;
   aspect-ratio: 16 / 9;
   object-fit: cover;
-  border-radius: 6px;
-  background: #101726;
+  display: block;
+  background: transparent;
 }
 
 .list-item-thumbnail.placeholder {
