@@ -16,6 +16,7 @@ type RecordingItem = {
   durationSec: number;
   videoUrl: string | null;
   thumbnailUrl: string | null;
+  ruleId: number | null;
 };
 
 type ResumeEntry = {
@@ -35,6 +36,12 @@ type ResumeBatchPayload = {
 
 type RecordedResponse = {
   records?: unknown[];
+};
+
+type RuleResponse = {
+  searchOption?: {
+    keyword?: unknown;
+  };
 };
 
 export function App() {
@@ -66,6 +73,9 @@ export function App() {
         recordingId={route.recordingId}
         onBack={() => {
           navigate({ kind: "home" });
+        }}
+        onOpenRecording={(nextRecordingId) => {
+          navigate({ kind: "playback", recordingId: nextRecordingId });
         }}
       />
     );
@@ -176,8 +186,21 @@ function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) =
   );
 }
 
-function PlaybackPage({ recordingId, onBack }: { recordingId: string; onBack: () => void }) {
+function PlaybackPage({
+  recordingId,
+  onBack,
+  onOpenRecording,
+}: {
+  recordingId: string;
+  onBack: () => void;
+  onOpenRecording: (recordingId: string) => void;
+}) {
   const [recording, setRecording] = useState<RecordingItem | null>(null);
+  const [playlist, setPlaylist] = useState<RecordingItem[]>([]);
+  const [ruleLabel, setRuleLabel] = useState<string | null>(null);
+  const [loadingPlaylist, setLoadingPlaylist] = useState(false);
+  const [playlistErrorMessage, setPlaylistErrorMessage] = useState<string | null>(null);
+  const [continuousPlayEnabled, setContinuousPlayEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -185,11 +208,32 @@ function PlaybackPage({ recordingId, onBack }: { recordingId: string; onBack: ()
   useEffect(() => {
     void (async () => {
       setLoading(true);
+      setPlaylist([]);
+      setRuleLabel(null);
+      setLoadingPlaylist(false);
+      setPlaylistErrorMessage(null);
       setErrorMessage(null);
       setStatusMessage(null);
       try {
         const item = await fetchRecordingDetail(recordingId);
         setRecording(item);
+        if (item.ruleId !== null) {
+          setLoadingPlaylist(true);
+          try {
+            const [playlistItems, fetchedRuleLabel] = await Promise.all([
+              fetchRuleRecordings(item.ruleId),
+              fetchRuleLabel(item.ruleId),
+            ]);
+            const mergedPlaylist = mergeRecordingIntoPlaylist(item, playlistItems);
+            setPlaylist(mergedPlaylist);
+            setRuleLabel(fetchedRuleLabel);
+          } catch {
+            setPlaylist([]);
+            setPlaylistErrorMessage("録画ルールの再生リスト取得に失敗しました。");
+          } finally {
+            setLoadingPlaylist(false);
+          }
+        }
         if (!item.videoUrl) {
           setErrorMessage("動画ファイルが見つからないため再生できません。");
         }
@@ -201,6 +245,18 @@ function PlaybackPage({ recordingId, onBack }: { recordingId: string; onBack: ()
       }
     })();
   }, [recordingId]);
+
+  const nextRecording = useMemo(() => {
+    if (!recording || playlist.length === 0) {
+      return null;
+    }
+    const sorted = [...playlist].sort((a, b) => a.recordedAtMs - b.recordedAtMs);
+    const currentIndex = sorted.findIndex((item) => item.recordingId === recording.recordingId);
+    if (currentIndex < 0 || currentIndex >= sorted.length - 1) {
+      return null;
+    }
+    return sorted[currentIndex + 1];
+  }, [playlist, recording]);
 
   return (
     <div className="playback-layout">
@@ -217,10 +273,95 @@ function PlaybackPage({ recordingId, onBack }: { recordingId: string; onBack: ()
       {loading && <p>録画情報を読み込み中...</p>}
       {errorMessage && <p className="error">{errorMessage}</p>}
       {statusMessage && <p className="status">{statusMessage}</p>}
+      {playlistErrorMessage && <p className="error">{playlistErrorMessage}</p>}
 
       <section className="playback-player-section">
-        <Player episode={recording} onStatus={setStatusMessage} onError={setErrorMessage} />
+        <Player
+          episode={recording}
+          onStatus={setStatusMessage}
+          onError={setErrorMessage}
+          onEpisodeEnded={() => {
+            if (
+              continuousPlayEnabled &&
+              nextRecording &&
+              recording?.ruleId !== null &&
+              nextRecording.videoUrl
+            ) {
+              setStatusMessage(`次の録画へ移動します: ${nextRecording.title}`);
+              onOpenRecording(nextRecording.recordingId);
+              return true;
+            }
+            return false;
+          }}
+        />
       </section>
+      {recording && recording.ruleId !== null && (
+        <section className="panel playback-playlist-section">
+          <div className="playback-playlist-header">
+            <div>
+              <h3>録画ルール再生リスト</h3>
+              <p className="note">{ruleLabel ?? `ルールID: ${recording.ruleId}`}</p>
+            </div>
+            <label className="toggle-line">
+              <input
+                type="checkbox"
+                checked={continuousPlayEnabled}
+                onChange={(event) => setContinuousPlayEnabled(event.currentTarget.checked)}
+              />
+              連続再生
+            </label>
+          </div>
+          {loadingPlaylist ? (
+            <p>再生リストを読み込み中...</p>
+          ) : playlist.length === 0 ? (
+            <p>ルール内の録画が見つかりません。</p>
+          ) : (
+            <>
+              <p className="note">
+                次に再生:{" "}
+                {nextRecording?.title && nextRecording.videoUrl ? nextRecording.title : "次の録画はありません"}
+              </p>
+              <ul className="list">
+                {playlist
+                  .slice()
+                  .sort((a, b) => a.recordedAtMs - b.recordedAtMs)
+                  .map((item) => (
+                    <li key={item.recordingId}>
+                      <button
+                        type="button"
+                        className={`list-item playback-list-item ${
+                          item.recordingId === recording.recordingId ? "active" : ""
+                        }`}
+                        onClick={() => onOpenRecording(item.recordingId)}
+                        disabled={!item.videoUrl}
+                      >
+                        <div className="list-item-media">
+                          <div className="thumbnail-shell">
+                            {item.thumbnailUrl ? (
+                              <img
+                                className="list-item-thumbnail"
+                                src={item.thumbnailUrl}
+                                alt={`${item.title} のサムネイル`}
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="list-item-thumbnail placeholder">No Image</div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="list-item-content">
+                          <span className="title">{item.title}</span>
+                          <span className="meta">{formatDate(item.recordedAt)}</span>
+                          <span className="description-snippet">{toSnippet(item.description)}</span>
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }
@@ -229,10 +370,12 @@ function Player({
   episode,
   onStatus,
   onError,
+  onEpisodeEnded,
 }: {
   episode: RecordingItem | null;
   onStatus: (message: string | null) => void;
   onError: (message: string | null) => void;
+  onEpisodeEnded: () => boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const resumeReadyRef = useRef(false);
@@ -316,7 +459,9 @@ function Player({
     };
     const onEnded = () => {
       void saveResume();
-      onStatus("再生完了を保存しました。");
+      if (!onEpisodeEnded()) {
+        onStatus("再生完了を保存しました。");
+      }
     };
     const onBeforeUnload = () => {
       void saveResume();
@@ -337,7 +482,7 @@ function Player({
       window.removeEventListener("beforeunload", onBeforeUnload);
       clearInterval(intervalId);
     };
-  }, [onStatus, saveResume]);
+  }, [onEpisodeEnded, onStatus, saveResume]);
 
   return <video ref={videoRef} controls preload="metadata" className="player player-large" />;
 }
@@ -365,6 +510,37 @@ async function fetchRecordingDetail(recordingId: string): Promise<RecordingItem>
     throw new Error("recording payload is invalid");
   }
   return normalized;
+}
+
+async function fetchRuleRecordings(ruleId: number): Promise<RecordingItem[]> {
+  const response = await fetch(`/api/recorded?ruleId=${encodeURIComponent(String(ruleId))}&limit=100&isHalfWidth=true`);
+  if (!response.ok) {
+    throw new Error(`recorded by rule API failed: ${response.status}`);
+  }
+  const payload = (await response.json()) as RecordedResponse;
+  return (payload.records ?? [])
+    .map((item) => normalizeRecording(item))
+    .filter((item): item is RecordingItem => item !== null)
+    .sort((a, b) => a.recordedAtMs - b.recordedAtMs);
+}
+
+async function fetchRuleLabel(ruleId: number): Promise<string | null> {
+  const response = await fetch(`/api/rules/${encodeURIComponent(String(ruleId))}`);
+  if (!response.ok) {
+    return `ルールID: ${ruleId}`;
+  }
+  const payload = (await response.json()) as RuleResponse;
+  const keyword = toStringSafe(payload.searchOption?.keyword);
+  return keyword ? `キーワード: ${keyword}` : `ルールID: ${ruleId}`;
+}
+
+function mergeRecordingIntoPlaylist(current: RecordingItem, playlist: RecordingItem[]): RecordingItem[] {
+  const byId = new Map<string, RecordingItem>();
+  for (const item of playlist) {
+    byId.set(item.recordingId, item);
+  }
+  byId.set(current.recordingId, current);
+  return [...byId.values()].sort((a, b) => a.recordedAtMs - b.recordedAtMs);
 }
 
 async function fetchResumeBatch(recordingIds: string[]): Promise<Record<string, ResumeEntry | null>> {
@@ -413,6 +589,7 @@ function normalizeRecording(value: unknown): RecordingItem | null {
   const thumbnailUrl = thumbnailId !== null ? `/api/thumbnails/${thumbnailId}` : null;
 
   const durationSec = endAt !== null && endAt >= startAt ? (endAt - startAt) / 1000 : 0;
+  const ruleId = toNumber(value.ruleId);
   return {
     recordingId,
     title,
@@ -422,6 +599,7 @@ function normalizeRecording(value: unknown): RecordingItem | null {
     durationSec,
     videoUrl,
     thumbnailUrl,
+    ruleId,
   };
 }
 
