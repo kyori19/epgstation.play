@@ -20,6 +20,3 @@ migrations_dir = "migrations"
 [assets]
 binding = "ASSETS"
 directory = "./dist/client"
-
-[vars]
-EPGSTATION_API_BASE = "/api"

@@ -6,8 +6,8 @@ Cloudflare Workers 上で `/.play/` 配下に追加フロントエンドを配�
 
 - `/.play/` で React フロントエンドを表示
 - `/.play/api/resume/:recordingId` で再生位置を D1 に保存/取得
-- `/.play/api/rules` / `/.play/api/rules/:ruleId/episodes` / `/.play/api/rules/:ruleId/next` で EPGStation 既存 API と連携
-- 未視聴判定は視聴率 90% 未満、次話は録画日時の古い順
+- トップページで「新規録画一覧 / ルール一覧」を表示し、録画選択で専用再生ページへ遷移
+- ルール一覧は最新録画が存在するルールを優先表示
 - 再生位置保存タイミングは 10 秒ごと + pause/ended/unload
 
 ## 前提
@@ -26,8 +26,6 @@ npm install
 
 1. `database_id` を実際の D1 Database ID に置換
 2. 本番ドメインの `/.play/*` を `routes` に設定
-3. 必要なら `vars.EPGSTATION_API_BASE` を変更（既定値: `/api`）
-
 > GitHub Actions の `deploy.yml` は `CLOUDFLARE_D1_DATABASE_ID` と `CLOUDFLARE_PLAY_ROUTE` を使って `wrangler.toml` のプレースホルダを自動置換します。
 
 ## D1 マイグレーション
@@ -98,5 +96,5 @@ Repository または Environment (`production`) に以下を設定してくだ�
 
 ## API の補足
 
-- EPGStation API は実環境差異を想定し、Workers 側でレスポンス吸収（正規化）を行います。
-- rules エンドポイントが使えない場合は recorded 系 API から rule 情報をフォールバック抽出します。
+- EPGStation API はフロントエンドから直接呼び出します（認証付き環境を前提）。
+- Worker は `/.play/api/resume/:recordingId` と SPA 配信を担当します。

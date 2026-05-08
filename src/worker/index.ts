@@ -1,10 +1,8 @@
-import { EpgStationAdapter } from "./epgstation";
-import type { Episode, ResumeRow } from "./types";
+import type { ResumeRow } from "./types";
 
 type Env = {
   DB: D1Database;
   ASSETS: Fetcher;
-  EPGSTATION_API_BASE?: string;
 };
 
 const PLAY_PREFIX = "/.play";
@@ -31,32 +29,8 @@ export default {
 };
 
 async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
-  const adapter = new EpgStationAdapter(request, env.EPGSTATION_API_BASE ?? "/api");
   const method = request.method.toUpperCase();
   const pathname = url.pathname;
-
-  if (method === "GET" && pathname === `${API_PREFIX}/rules`) {
-    const rules = await adapter.fetchRules();
-    return jsonResponse({ rules });
-  }
-
-  const episodesMatch = pathname.match(/^\/\.play\/api\/rules\/([^/]+)\/episodes$/);
-  if (method === "GET" && episodesMatch) {
-    const ruleId = decodeURIComponent(episodesMatch[1]);
-    const episodes = await adapter.fetchEpisodesByRule(ruleId);
-    const enriched = await enrichEpisodesWithResume(episodes, env.DB);
-    return jsonResponse({ ruleId, episodes: enriched });
-  }
-
-  const nextMatch = pathname.match(/^\/\.play\/api\/rules\/([^/]+)\/next$/);
-  if (method === "GET" && nextMatch) {
-    const ruleId = decodeURIComponent(nextMatch[1]);
-    const episodes = await adapter.fetchEpisodesByRule(ruleId);
-    const enriched = await enrichEpisodesWithResume(episodes, env.DB);
-    const nextEpisode =
-      enriched.find((episode) => episode.recordingId && episode.watchedRatio < 0.9) ?? null;
-    return jsonResponse({ ruleId, nextEpisode });
-  }
 
   const resumeMatch = pathname.match(/^\/\.play\/api\/resume\/([^/]+)$/);
   if (resumeMatch) {
@@ -122,35 +96,6 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   }
 
   return jsonResponse({ error: "Not Found" }, 404);
-}
-
-async function enrichEpisodesWithResume(
-  episodes: Episode[],
-  db: D1Database,
-): Promise<Array<Episode & { watchedRatio: number }>> {
-  const recordingIds = episodes
-    .map((episode) => episode.recordingId)
-    .filter((id): id is string => typeof id === "string");
-  const uniqueIds = [...new Set(recordingIds)];
-  if (uniqueIds.length === 0) {
-    return episodes.map((episode) => ({ ...episode, watchedRatio: 0 }));
-  }
-
-  const placeholders = uniqueIds.map(() => "?").join(", ");
-  const query = `SELECT recording_id, watched_ratio FROM resume_positions WHERE recording_id IN (${placeholders})`;
-  const rows = await db
-    .prepare(query)
-    .bind(...uniqueIds)
-    .all<{ recording_id: string; watched_ratio: number }>();
-  const ratioByRecordingId = new Map<string, number>();
-  for (const row of rows.results) {
-    ratioByRecordingId.set(row.recording_id, row.watched_ratio);
-  }
-
-  return episodes.map((episode) => ({
-    ...episode,
-    watchedRatio: episode.recordingId ? ratioByRecordingId.get(episode.recordingId) ?? 0 : 0,
-  }));
 }
 
 async function serveSpaAsset(request: Request, env: Env, url: URL): Promise<Response> {
