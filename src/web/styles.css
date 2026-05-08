@@ -90,6 +90,11 @@ button:disabled {
   align-items: start;
 }
 
+.list-item-media {
+  display: grid;
+  gap: 6px;
+}
+
 .list-item-thumbnail {
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -110,6 +115,29 @@ button:disabled {
   display: grid;
   gap: 4px;
   min-width: 0;
+}
+
+.progress-container {
+  display: grid;
+  gap: 4px;
+}
+
+.progress-label {
+  font-size: 12px;
+  color: #9ba7c8;
+}
+
+.progress-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: #27304a;
+  overflow: hidden;
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #7ba2ff 0%, #9fd6a3 100%);
 }
 
 .title {

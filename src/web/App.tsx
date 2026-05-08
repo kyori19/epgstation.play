@@ -125,33 +125,46 @@ function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) =
             <p>録画が見つかりません。</p>
           ) : (
             <ul className="list">
-              {recentRecordings.map((recording) => (
-                <li key={recording.recordingId}>
-                  <button
-                    type="button"
-                    className="list-item"
-                    onClick={() => onOpenRecording(recording.recordingId)}
-                    disabled={!recording.videoUrl}
-                  >
-                    {recording.thumbnailUrl ? (
-                      <img
-                        className="list-item-thumbnail"
-                        src={recording.thumbnailUrl}
-                        alt={`${recording.title} のサムネイル`}
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="list-item-thumbnail placeholder">No Image</div>
-                    )}
-                    <div className="list-item-content">
-                      <span className="title">{recording.title}</span>
-                      <span className="meta">{formatDate(recording.recordedAt)}</span>
-                      <span className="meta">{formatResumeStatus(resumeByRecordingId[recording.recordingId])}</span>
-                      <span className="description-snippet">{toSnippet(recording.description)}</span>
-                    </div>
-                  </button>
-                </li>
-              ))}
+              {recentRecordings.map((recording) => {
+                const resumeProgress = getResumeProgress(resumeByRecordingId[recording.recordingId]);
+                return (
+                  <li key={recording.recordingId}>
+                    <button
+                      type="button"
+                      className="list-item"
+                      onClick={() => onOpenRecording(recording.recordingId)}
+                      disabled={!recording.videoUrl}
+                    >
+                      <div className="list-item-media">
+                        {recording.thumbnailUrl ? (
+                          <img
+                            className="list-item-thumbnail"
+                            src={recording.thumbnailUrl}
+                            alt={`${recording.title} のサムネイル`}
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="list-item-thumbnail placeholder">No Image</div>
+                        )}
+                        <div className="progress-container">
+                          <span className="progress-label">{resumeProgress.label}</span>
+                          <div className="progress-track" aria-hidden="true">
+                            <span
+                              className="progress-fill"
+                              style={{ width: `${Math.round(resumeProgress.ratio * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="list-item-content">
+                        <span className="title">{recording.title}</span>
+                        <span className="meta">{formatDate(recording.recordedAt)}</span>
+                        <span className="description-snippet">{toSnippet(recording.description)}</span>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -433,18 +446,22 @@ function formatDate(isoDate: string): string {
   return new Date(isoDate).toLocaleString("ja-JP");
 }
 
-function formatResumeStatus(resume: ResumeEntry | null | undefined): string {
+function getResumeProgress(resume: ResumeEntry | null | undefined): { label: string; ratio: number } {
   if (!resume) {
-    return "再生位置: 未視聴";
+    return { label: "再生位置: 未視聴", ratio: 0 };
   }
   const watched = resume.watchedRatio >= 0.95 || resume.positionSec >= Math.max(resume.durationSec - 5, 0);
   if (watched) {
-    return "再生位置: 視聴済み";
+    return { label: "再生位置: 視聴済み", ratio: 1 };
   }
   if (resume.durationSec <= 0) {
-    return `再生位置: ${formatTime(Math.floor(resume.positionSec))}`;
+    return { label: `再生位置: ${formatTime(Math.floor(resume.positionSec))}`, ratio: 0 };
   }
-  return `再生位置: ${formatTime(Math.floor(resume.positionSec))} / ${formatTime(Math.floor(resume.durationSec))}`;
+  const ratio = clampNumber(resume.positionSec / resume.durationSec, 0, 1);
+  return {
+    label: `再生位置: ${formatTime(Math.floor(resume.positionSec))} / ${formatTime(Math.floor(resume.durationSec))}`,
+    ratio,
+  };
 }
 
 function toSnippet(description: string): string {
@@ -464,6 +481,10 @@ function formatTime(totalSec: number): string {
     return `${hour}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`;
   }
   return `${minute}:${String(second).padStart(2, "0")}`;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
