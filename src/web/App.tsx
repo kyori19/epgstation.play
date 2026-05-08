@@ -126,7 +126,10 @@ function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) =
           ) : (
             <ul className="list">
               {recentRecordings.map((recording) => {
-                const resumeProgress = getResumeProgress(resumeByRecordingId[recording.recordingId]);
+                const resumeProgress = getResumeProgress(
+                  resumeByRecordingId[recording.recordingId],
+                  recording.durationSec,
+                );
                 return (
                   <li key={recording.recordingId}>
                     <button
@@ -136,19 +139,19 @@ function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) =
                       disabled={!recording.videoUrl}
                     >
                       <div className="list-item-media">
-                        {recording.thumbnailUrl ? (
-                          <img
-                            className="list-item-thumbnail"
-                            src={recording.thumbnailUrl}
-                            alt={`${recording.title} のサムネイル`}
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="list-item-thumbnail placeholder">No Image</div>
-                        )}
-                        <div className="progress-container">
-                          <span className="progress-label">{resumeProgress.label}</span>
-                          <div className="progress-track" aria-hidden="true">
+                        <div className="thumbnail-shell">
+                          {recording.thumbnailUrl ? (
+                            <img
+                              className="list-item-thumbnail"
+                              src={recording.thumbnailUrl}
+                              alt={`${recording.title} のサムネイル`}
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="list-item-thumbnail placeholder">No Image</div>
+                          )}
+                          <span className="thumbnail-time">{resumeProgress.timeText}</span>
+                          <div className="progress-track thumbnail-progress" aria-hidden="true">
                             <span
                               className="progress-fill"
                               style={{ width: `${Math.round(resumeProgress.ratio * 100)}%` }}
@@ -446,30 +449,33 @@ function formatDate(isoDate: string): string {
   return new Date(isoDate).toLocaleString("ja-JP");
 }
 
-function getResumeProgress(resume: ResumeEntry | null | undefined): { label: string; ratio: number } {
+function getResumeProgress(
+  resume: ResumeEntry | null | undefined,
+  fallbackDurationSec: number,
+): { ratio: number; timeText: string } {
+  const durationSec = resume && resume.durationSec > 0 ? resume.durationSec : Math.max(0, fallbackDurationSec);
+  const positionSec = Math.max(0, resume?.positionSec ?? 0);
+  const timeText = durationSec > 0 ? `${formatTime(Math.floor(positionSec))} / ${formatTime(Math.floor(durationSec))}` : "0:00";
   if (!resume) {
-    return { label: "再生位置: 未視聴", ratio: 0 };
+    return { ratio: 0, timeText };
   }
-  const watched = resume.watchedRatio >= 0.95 || resume.positionSec >= Math.max(resume.durationSec - 5, 0);
+  const watched = resume.watchedRatio >= 0.95 || positionSec >= Math.max(durationSec - 5, 0);
   if (watched) {
-    return { label: "再生位置: 視聴済み", ratio: 1 };
+    return {
+      ratio: 1,
+      timeText: durationSec > 0 ? `${formatTime(Math.floor(durationSec))} / ${formatTime(Math.floor(durationSec))}` : timeText,
+    };
   }
-  if (resume.durationSec <= 0) {
-    return { label: `再生位置: ${formatTime(Math.floor(resume.positionSec))}`, ratio: 0 };
-  }
-  const ratio = clampNumber(resume.positionSec / resume.durationSec, 0, 1);
-  return {
-    label: `再生位置: ${formatTime(Math.floor(resume.positionSec))} / ${formatTime(Math.floor(resume.durationSec))}`,
-    ratio,
-  };
+  const ratio = durationSec > 0 ? clampNumber(positionSec / durationSec, 0, 1) : 0;
+  return { ratio, timeText };
 }
 
 function toSnippet(description: string): string {
   if (description.trim().length === 0) {
-    return "説明: なし";
+    return "説明なし";
   }
   const compact = description.replace(/\s+/g, " ").trim();
-  return compact.length > 90 ? `説明: ${compact.slice(0, 90)}…` : `説明: ${compact}`;
+  return compact.length > 90 ? `${compact.slice(0, 90)}…` : compact;
 }
 
 function formatTime(totalSec: number): string {
