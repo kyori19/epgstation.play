@@ -44,22 +44,9 @@ button:disabled {
   color: #9ba7c8;
 }
 
-.tabs {
-  display: none;
-  gap: 8px;
-}
-
-.tabs button {
-  flex: 1;
-}
-
-.tabs button.active {
-  border-color: #78a9ff;
-}
-
 .top-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
@@ -147,22 +134,4 @@ button:disabled {
 
 .player-large {
   height: min(82vh, calc(100vh - 150px));
-}
-
-@media (max-width: 900px) {
-  .tabs {
-    display: flex;
-  }
-
-  .top-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .panel-hidden-mobile {
-    display: none;
-  }
-
-  .panel-visible {
-    display: grid;
-  }
 }

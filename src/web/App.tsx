@@ -7,14 +7,8 @@ type Route =
       recordingId: string;
     };
 
-type Rule = {
-  id: string;
-  name: string;
-};
-
 type RecordingItem = {
   recordingId: string;
-  ruleId: string | null;
   title: string;
   recordedAt: string;
   recordedAtMs: number;
@@ -33,10 +27,6 @@ type ResumePayload = {
 
 type RecordedResponse = {
   records?: unknown[];
-};
-
-type RulesResponse = {
-  rules?: unknown[];
 };
 
 export function App() {
@@ -84,12 +74,7 @@ export function App() {
 
 function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) => void }) {
   const [recentRecordings, setRecentRecordings] = useState<RecordingItem[]>([]);
-  const [rules, setRules] = useState<Rule[]>([]);
-  const [activeRuleId, setActiveRuleId] = useState<string | null>(null);
-  const [episodes, setEpisodes] = useState<RecordingItem[]>([]);
-  const [activeTab, setActiveTab] = useState<"recent" | "rules">("recent");
   const [loadingHome, setLoadingHome] = useState(true);
-  const [loadingEpisodes, setLoadingEpisodes] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -97,9 +82,8 @@ function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) =
       setLoadingHome(true);
       setErrorMessage(null);
       try {
-        const [recent, fetchedRules] = await Promise.all([fetchRecentRecordings(), fetchRules()]);
+        const recent = await fetchRecentRecordings();
         setRecentRecordings(recent);
-        setRules(sortRulesByRecentRecordings(fetchedRules, recent));
       } catch {
         setErrorMessage("一覧の取得に失敗しました。EPGStation API 設定を確認してください。");
       } finally {
@@ -108,71 +92,17 @@ function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) =
     })();
   }, []);
 
-  useEffect(() => {
-    if (rules.length === 0) {
-      setActiveRuleId(null);
-      return;
-    }
-    setActiveRuleId((current) => {
-      if (current && rules.some((rule) => rule.id === current)) {
-        return current;
-      }
-      return rules[0].id;
-    });
-  }, [rules]);
-
-  useEffect(() => {
-    if (!activeRuleId) {
-      setEpisodes([]);
-      return;
-    }
-    void (async () => {
-      setLoadingEpisodes(true);
-      setErrorMessage(null);
-      try {
-        const nextEpisodes = await fetchRecordingsByRuleId(activeRuleId);
-        setEpisodes(nextEpisodes);
-      } catch {
-        setErrorMessage("ルールの録画一覧取得に失敗しました。");
-        setEpisodes([]);
-      } finally {
-        setLoadingEpisodes(false);
-      }
-    })();
-  }, [activeRuleId]);
-
   return (
     <div className="home-layout">
       <header className="home-header">
         <h1>EPGStation Play</h1>
-        <p className="note">録画一覧とルール一覧から選択して再生ページへ移動します。</p>
+        <p className="note">新規録画一覧から選択して再生ページへ移動します。</p>
       </header>
-
-      <div className="tabs" role="tablist" aria-label="一覧切り替え">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "recent"}
-          className={activeTab === "recent" ? "active" : ""}
-          onClick={() => setActiveTab("recent")}
-        >
-          新規録画
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "rules"}
-          className={activeTab === "rules" ? "active" : ""}
-          onClick={() => setActiveTab("rules")}
-        >
-          ルール
-        </button>
-      </div>
 
       {errorMessage && <p className="error">{errorMessage}</p>}
 
       <div className="top-grid">
-        <section className={activeTab === "recent" ? "panel panel-visible" : "panel panel-hidden-mobile"}>
+        <section className="panel">
           <h2>新規録画</h2>
           {loadingHome ? (
             <p>読み込み中...</p>
@@ -190,52 +120,6 @@ function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) =
                   >
                     <span className="title">{recording.title}</span>
                     <span className="meta">{formatDate(recording.recordedAt)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className={activeTab === "rules" ? "panel panel-visible" : "panel panel-hidden-mobile"}>
-          <h2>ルール</h2>
-          {loadingHome ? (
-            <p>読み込み中...</p>
-          ) : rules.length === 0 ? (
-            <p>ルールが見つかりません。</p>
-          ) : (
-            <ul className="list">
-              {rules.map((rule) => (
-                <li key={rule.id}>
-                  <button
-                    type="button"
-                    className={rule.id === activeRuleId ? "active" : ""}
-                    onClick={() => setActiveRuleId(rule.id)}
-                  >
-                    {rule.name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <h3>選択ルールの録画</h3>
-          {loadingEpisodes ? (
-            <p>読み込み中...</p>
-          ) : episodes.length === 0 ? (
-            <p>対象録画はありません。</p>
-          ) : (
-            <ul className="list">
-              {episodes.map((episode) => (
-                <li key={episode.recordingId}>
-                  <button
-                    type="button"
-                    className="list-item"
-                    onClick={() => onOpenRecording(episode.recordingId)}
-                    disabled={!episode.videoUrl}
-                  >
-                    <span className="title">{episode.title}</span>
-                    <span className="meta">{formatDate(episode.recordedAt)}</span>
                   </button>
                 </li>
               ))}
@@ -425,29 +309,6 @@ async function fetchRecentRecordings(): Promise<RecordingItem[]> {
     .sort((a, b) => b.recordedAtMs - a.recordedAtMs);
 }
 
-async function fetchRules(): Promise<Rule[]> {
-  const response = await fetch("/api/rules?limit=100");
-  if (!response.ok) {
-    throw new Error(`rules API failed: ${response.status}`);
-  }
-  const payload = (await response.json()) as RulesResponse;
-  return (payload.rules ?? [])
-    .map((item) => normalizeRule(item))
-    .filter((item): item is Rule => item !== null);
-}
-
-async function fetchRecordingsByRuleId(ruleId: string): Promise<RecordingItem[]> {
-  const response = await fetch(`/api/recorded?ruleId=${encodeURIComponent(ruleId)}&isHalfWidth=true&limit=100`);
-  if (!response.ok) {
-    throw new Error(`recorded by rule API failed: ${response.status}`);
-  }
-  const payload = (await response.json()) as RecordedResponse;
-  return (payload.records ?? [])
-    .map((item) => normalizeRecording(item))
-    .filter((item): item is RecordingItem => item !== null)
-    .sort((a, b) => b.recordedAtMs - a.recordedAtMs);
-}
-
 async function fetchRecordingDetail(recordingId: string): Promise<RecordingItem> {
   const response = await fetch(`/api/recorded/${encodeURIComponent(recordingId)}?isHalfWidth=true`);
   if (!response.ok) {
@@ -488,51 +349,12 @@ function normalizeRecording(value: unknown): RecordingItem | null {
   const durationSec = endAt !== null && endAt >= startAt ? (endAt - startAt) / 1000 : 0;
   return {
     recordingId,
-    ruleId: toStringSafe(value.ruleId),
     title,
     recordedAt: new Date(startAt).toISOString(),
     recordedAtMs: startAt,
     durationSec,
     videoUrl,
   };
-}
-
-function normalizeRule(value: unknown): Rule | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const id = toStringSafe(value.id);
-  if (!id) {
-    return null;
-  }
-  const searchOption = isRecord(value.searchOption) ? value.searchOption : null;
-  const name =
-    toStringSafe(value.name) ??
-    (searchOption ? toStringSafe(searchOption.keyword) : null) ??
-    `Rule ${id}`;
-  return { id, name };
-}
-
-function sortRulesByRecentRecordings(rules: Rule[], recentRecordings: RecordingItem[]): Rule[] {
-  const latestByRuleId = new Map<string, number>();
-  for (const recording of recentRecordings) {
-    if (!recording.ruleId) {
-      continue;
-    }
-    const current = latestByRuleId.get(recording.ruleId) ?? 0;
-    if (recording.recordedAtMs > current) {
-      latestByRuleId.set(recording.ruleId, recording.recordedAtMs);
-    }
-  }
-
-  return [...rules].sort((a, b) => {
-    const aLatest = latestByRuleId.get(a.id) ?? 0;
-    const bLatest = latestByRuleId.get(b.id) ?? 0;
-    if (aLatest !== bLatest) {
-      return bLatest - aLatest;
-    }
-    return a.name.localeCompare(b.name, "ja");
-  });
 }
 
 function parseRoute(pathname: string): Route {

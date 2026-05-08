@@ -1,13 +1,12 @@
 # epgstation.play
 
-Cloudflare Workers 上で `/.play/` 配下に追加フロントエンドを配信し、EPGStation 録画の再生位置リジュームと rule ベース連続視聴 UI を提供する実装です。
+Cloudflare Workers 上で `/.play/` 配下に追加フロントエンドを配信し、EPGStation 録画の再生位置リジューム UI を提供する実装です。
 
 ## できること
 
 - `/.play/` で React フロントエンドを表示
 - `/.play/api/resume/:recordingId` で再生位置を D1 に保存/取得
-- トップページで「新規録画一覧 / ルール一覧」を表示し、録画選択で専用再生ページへ遷移
-- ルール一覧は最新録画が存在するルールを優先表示
+- トップページで「新規録画一覧」を表示し、録画選択で専用再生ページへ遷移
 - 再生位置保存タイミングは 10 秒ごと + pause/ended/unload
 
 ## 前提
