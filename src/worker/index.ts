@@ -137,12 +137,32 @@ async function serveSpaAsset(request: Request, env: Env, url: URL): Promise<Resp
   rewritten.pathname = normalizedPath;
 
   const assetResponse = await env.ASSETS.fetch(new Request(rewritten.toString(), request));
-  if (assetResponse.status !== 404) {
+  if (!shouldFallbackToSpaEntry(assetResponse, url)) {
     return assetResponse;
   }
 
-  rewritten.pathname = "/index.html";
+  // Cloudflare Assets can canonicalize /index.html to / with a redirect.
+  // Use / directly so SPA deep-links return HTML without exposing that redirect.
+  rewritten.pathname = "/";
   return env.ASSETS.fetch(new Request(rewritten.toString(), request));
+}
+
+function shouldFallbackToSpaEntry(assetResponse: Response, requestUrl: URL): boolean {
+  if (assetResponse.status === 404) {
+    return true;
+  }
+
+  if (assetResponse.status < 300 || assetResponse.status >= 400) {
+    return false;
+  }
+
+  const location = assetResponse.headers.get("location");
+  if (!location || !URL.canParse(location, requestUrl.toString())) {
+    return false;
+  }
+
+  const redirectUrl = new URL(location, requestUrl.toString());
+  return redirectUrl.pathname === "/";
 }
 
 async function parseJson(request: Request): Promise<Record<string, unknown> | null> {
