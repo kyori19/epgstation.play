@@ -224,10 +224,6 @@ button:disabled {
   block-size: 16px;
 }
 
-.playback-list-item {
-  grid-template-columns: 160px minmax(0, 1fr);
-}
-
 .player {
   width: 100%;
   background: #000;
