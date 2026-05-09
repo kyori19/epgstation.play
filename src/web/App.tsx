@@ -136,45 +136,13 @@ function TopPage({ onOpenRecording }: { onOpenRecording: (recordingId: string) =
           ) : (
             <ul className="list">
               {recentRecordings.map((recording) => {
-                const resumeProgress = getResumeProgress(
-                  resumeByRecordingId[recording.recordingId],
-                  recording.durationSec,
-                );
                 return (
                   <li key={recording.recordingId}>
-                    <button
-                      type="button"
-                      className="list-item"
-                      onClick={() => onOpenRecording(recording.recordingId)}
-                      disabled={!recording.videoUrl}
-                    >
-                      <div className="list-item-media">
-                        <div className="thumbnail-shell">
-                          {recording.thumbnailUrl ? (
-                            <img
-                              className="list-item-thumbnail"
-                              src={recording.thumbnailUrl}
-                              alt={`${recording.title} のサムネイル`}
-                              loading="lazy"
-                            />
-                          ) : (
-                            <div className="list-item-thumbnail placeholder">No Image</div>
-                          )}
-                          <span className="thumbnail-time">{resumeProgress.timeText}</span>
-                          <div className="progress-track thumbnail-progress" aria-hidden="true">
-                            <span
-                              className="progress-fill"
-                              style={{ width: `${Math.round(resumeProgress.ratio * 100)}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="list-item-content">
-                        <span className="title">{recording.title}</span>
-                        <span className="meta">{formatDate(recording.recordedAt)}</span>
-                        <span className="description-snippet">{toSnippet(recording.description)}</span>
-                      </div>
-                    </button>
+                    <RecordingListItem
+                      recording={recording}
+                      onOpenRecording={onOpenRecording}
+                      resume={resumeByRecordingId[recording.recordingId]}
+                    />
                   </li>
                 );
               })}
@@ -197,6 +165,9 @@ function PlaybackPage({
 }) {
   const [recording, setRecording] = useState<RecordingItem | null>(null);
   const [playlist, setPlaylist] = useState<RecordingItem[]>([]);
+  const [playlistResumeByRecordingId, setPlaylistResumeByRecordingId] = useState<
+    Record<string, ResumeEntry | null>
+  >({});
   const [ruleLabel, setRuleLabel] = useState<string | null>(null);
   const [loadingPlaylist, setLoadingPlaylist] = useState(false);
   const [playlistErrorMessage, setPlaylistErrorMessage] = useState<string | null>(null);
@@ -209,6 +180,7 @@ function PlaybackPage({
     void (async () => {
       setLoading(true);
       setPlaylist([]);
+      setPlaylistResumeByRecordingId({});
       setRuleLabel(null);
       setLoadingPlaylist(false);
       setPlaylistErrorMessage(null);
@@ -245,6 +217,31 @@ function PlaybackPage({
       }
     })();
   }, [recordingId]);
+
+  useEffect(() => {
+    if (playlist.length === 0) {
+      setPlaylistResumeByRecordingId({});
+      return;
+    }
+
+    let canceled = false;
+    void (async () => {
+      try {
+        const resumeMap = await fetchResumeBatch(playlist.map((item) => item.recordingId));
+        if (!canceled) {
+          setPlaylistResumeByRecordingId(resumeMap);
+        }
+      } catch {
+        if (!canceled) {
+          setPlaylistResumeByRecordingId({});
+        }
+      }
+    })();
+
+    return () => {
+      canceled = true;
+    };
+  }, [playlist]);
 
   const nextRecording = useMemo(() => {
     if (!recording || playlist.length === 0) {
@@ -321,48 +318,72 @@ function PlaybackPage({
                 次に再生:{" "}
                 {nextRecording?.title && nextRecording.videoUrl ? nextRecording.title : "次の録画はありません"}
               </p>
-              <ul className="list">
-                {playlist
-                  .slice()
-                  .sort((a, b) => a.recordedAtMs - b.recordedAtMs)
-                  .map((item) => (
-                    <li key={item.recordingId}>
-                      <button
-                        type="button"
-                        className={`list-item playback-list-item ${
-                          item.recordingId === recording.recordingId ? "active" : ""
-                        }`}
-                        onClick={() => onOpenRecording(item.recordingId)}
-                        disabled={!item.videoUrl}
-                      >
-                        <div className="list-item-media">
-                          <div className="thumbnail-shell">
-                            {item.thumbnailUrl ? (
-                              <img
-                                className="list-item-thumbnail"
-                                src={item.thumbnailUrl}
-                                alt={`${item.title} のサムネイル`}
-                                loading="lazy"
-                              />
-                            ) : (
-                              <div className="list-item-thumbnail placeholder">No Image</div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="list-item-content">
-                          <span className="title">{item.title}</span>
-                          <span className="meta">{formatDate(item.recordedAt)}</span>
-                          <span className="description-snippet">{toSnippet(item.description)}</span>
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-              </ul>
+                <ul className="list">
+                  {playlist
+                    .slice()
+                    .sort((a, b) => a.recordedAtMs - b.recordedAtMs)
+                    .map((item) => (
+                      <li key={item.recordingId}>
+                        <RecordingListItem
+                          recording={item}
+                          onOpenRecording={onOpenRecording}
+                          isActive={item.recordingId === recording.recordingId}
+                          resume={playlistResumeByRecordingId[item.recordingId]}
+                        />
+                      </li>
+                    ))}
+                </ul>
             </>
           )}
         </section>
       )}
     </div>
+  );
+}
+
+function RecordingListItem({
+  recording,
+  onOpenRecording,
+  isActive = false,
+  resume,
+}: {
+  recording: RecordingItem;
+  onOpenRecording: (recordingId: string) => void;
+  isActive?: boolean;
+  resume?: ResumeEntry | null;
+}) {
+  const resumeProgress = getResumeProgress(resume, recording.durationSec);
+  return (
+    <button
+      type="button"
+      className={`list-item${isActive ? " active" : ""}`}
+      onClick={() => onOpenRecording(recording.recordingId)}
+      disabled={!recording.videoUrl}
+    >
+      <div className="list-item-media">
+        <div className="thumbnail-shell">
+          {recording.thumbnailUrl ? (
+            <img
+              className="list-item-thumbnail"
+              src={recording.thumbnailUrl}
+              alt={`${recording.title} のサムネイル`}
+              loading="lazy"
+            />
+          ) : (
+            <div className="list-item-thumbnail placeholder">No Image</div>
+          )}
+          <span className="thumbnail-time">{resumeProgress.timeText}</span>
+          <div className="progress-track thumbnail-progress" aria-hidden="true">
+            <span className="progress-fill" style={{ width: `${Math.round(resumeProgress.ratio * 100)}%` }} />
+          </div>
+        </div>
+      </div>
+      <div className="list-item-content">
+        <span className="title">{recording.title}</span>
+        <span className="meta">{formatDate(recording.recordedAt)}</span>
+        <span className="description-snippet">{toSnippet(recording.description)}</span>
+      </div>
+    </button>
   );
 }
 
