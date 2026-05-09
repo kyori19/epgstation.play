@@ -380,7 +380,7 @@ function RecordingListItem({
       </div>
       <div className="list-item-content">
         <span className="title">{recording.title}</span>
-        <span className="meta">{formatDate(recording.recordedAt)}</span>
+        <span className="meta">{formatDateWithWeekday(recording.recordedAt)}</span>
         <span className="description-snippet">{toSnippet(recording.description)}</span>
       </div>
     </button>
@@ -646,6 +646,14 @@ function routeToPath(basePath: string, route: Route): string {
 
 function formatDate(isoDate: string): string {
   return new Date(isoDate).toLocaleString("ja-JP");
+}
+
+function formatDateWithWeekday(isoDate: string): string {
+  const date = new Date(isoDate);
+  const weekday = date.toLocaleDateString("ja-JP", { weekday: "short" });
+  const dateText = date.toLocaleDateString("ja-JP");
+  const timeText = date.toLocaleTimeString("ja-JP");
+  return `${dateText}（${weekday}） ${timeText}`;
 }
 
 function getResumeProgress(
