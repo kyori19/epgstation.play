@@ -650,9 +650,10 @@ function formatDate(isoDate: string): string {
 
 function formatDateWithWeekday(isoDate: string): string {
   const date = new Date(isoDate);
-  const baseText = date.toLocaleString("ja-JP");
   const weekday = date.toLocaleDateString("ja-JP", { weekday: "short" });
-  return `${baseText}（${weekday}）`;
+  const dateText = date.toLocaleDateString("ja-JP");
+  const timeText = date.toLocaleTimeString("ja-JP");
+  return `${dateText}（${weekday}） ${timeText}`;
 }
 
 function getResumeProgress(
