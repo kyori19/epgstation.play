@@ -175,6 +175,22 @@ function PlaybackPage({
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const initialTitleRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (initialTitleRef.current === null) {
+      initialTitleRef.current = document.title;
+    }
+    return () => {
+      if (initialTitleRef.current !== null) {
+        document.title = initialTitleRef.current;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    document.title = recording?.title ? recording.title : "EPGStation Play";
+  }, [recording?.title]);
 
   useEffect(() => {
     void (async () => {
