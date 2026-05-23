@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
 type Route =
   | { kind: "home" }
@@ -32,6 +32,10 @@ type ResumePayload = {
 
 type ResumeBatchPayload = {
   resumes?: Record<string, ResumeEntry | null>;
+};
+
+type PlayerHandle = {
+  saveResume: (options?: { bestEffort?: boolean }) => void;
 };
 
 type RecordedResponse = {
@@ -176,6 +180,7 @@ function PlaybackPage({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const initialTitleRef = useRef<string | null>(null);
+  const playerRef = useRef<PlayerHandle | null>(null);
 
   useEffect(() => {
     if (initialTitleRef.current === null) {
@@ -274,7 +279,13 @@ function PlaybackPage({
   return (
     <div className="playback-layout">
       <header className="playback-header">
-        <button type="button" onClick={onBack}>
+        <button
+          type="button"
+          onClick={() => {
+            playerRef.current?.saveResume({ bestEffort: true });
+            onBack();
+          }}
+        >
           一覧へ戻る
         </button>
         <div>
@@ -290,6 +301,7 @@ function PlaybackPage({
 
       <section className="playback-player-section">
         <Player
+          ref={playerRef}
           episode={recording}
           onStatus={setStatusMessage}
           onError={setErrorMessage}
@@ -342,7 +354,10 @@ function PlaybackPage({
                       <li key={item.recordingId}>
                         <RecordingListItem
                           recording={item}
-                          onOpenRecording={onOpenRecording}
+                          onOpenRecording={(nextRecordingId) => {
+                            playerRef.current?.saveResume({ bestEffort: false });
+                            onOpenRecording(nextRecordingId);
+                          }}
                           isActive={item.recordingId === recording.recordingId}
                           resume={playlistResumeByRecordingId[item.recordingId]}
                         />
@@ -403,41 +418,105 @@ function RecordingListItem({
   );
 }
 
-function Player({
-  episode,
-  onStatus,
-  onError,
-  onEpisodeEnded,
-}: {
+const Player = forwardRef<PlayerHandle, {
   episode: RecordingItem | null;
   onStatus: (message: string | null) => void;
   onError: (message: string | null) => void;
   onEpisodeEnded: () => boolean;
-}) {
+}>(function Player({ episode, onStatus, onError, onEpisodeEnded }, ref) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const resumeReadyRef = useRef(false);
+  const saveStateRef = useRef({
+    inFlight: false,
+    pending: false,
+    pendingBestEffort: false,
+    lastSavedKey: "",
+    lastSavedAt: 0,
+  });
 
-  const saveResume = useCallback(async () => {
-    if (!episode?.recordingId) {
-      return;
-    }
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
+  const performSaveResume = useCallback(
+    async (bestEffort: boolean) => {
+      if (!episode?.recordingId) {
+        return;
+      }
+      const video = videoRef.current;
+      if (!video) {
+        return;
+      }
 
-    const durationSec = Number.isFinite(video.duration) ? video.duration : episode.durationSec;
-    const positionSec = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-    if (durationSec <= 0) {
-      return;
-    }
+      const durationSec = Number.isFinite(video.duration) ? video.duration : episode.durationSec;
+      const positionSec = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      if (durationSec <= 0) {
+        return;
+      }
 
-    await fetch(`/.play/api/resume/${encodeURIComponent(episode.recordingId)}`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ positionSec, durationSec }),
-    });
-  }, [episode]);
+      const url = `/.play/api/resume/${encodeURIComponent(episode.recordingId)}`;
+      const body = JSON.stringify({ positionSec, durationSec });
+      const key = `${episode.recordingId}:${Math.floor(positionSec)}:${Math.floor(durationSec)}`;
+      const now = Date.now();
+
+      const state = saveStateRef.current;
+      if (key === state.lastSavedKey && now - state.lastSavedAt < 2500) {
+        return;
+      }
+      state.lastSavedKey = key;
+      state.lastSavedAt = now;
+
+      try {
+        if (bestEffort && typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+          const beaconOk = navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+          if (beaconOk) {
+            return;
+          }
+        }
+
+        await fetch(url, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body,
+          keepalive: bestEffort,
+        });
+      } catch {
+        // best effort: ignore network failures
+      }
+    },
+    [episode],
+  );
+
+  const requestSaveResume = useCallback(
+    (bestEffort: boolean) => {
+      const state = saveStateRef.current;
+      if (state.inFlight) {
+        state.pending = true;
+        state.pendingBestEffort = state.pendingBestEffort || bestEffort;
+        return;
+      }
+      state.inFlight = true;
+
+      void (async () => {
+        try {
+          await performSaveResume(bestEffort);
+        } finally {
+          state.inFlight = false;
+          if (state.pending) {
+            const nextBestEffort = state.pendingBestEffort;
+            state.pending = false;
+            state.pendingBestEffort = false;
+            requestSaveResume(nextBestEffort);
+          }
+        }
+      })();
+    },
+    [performSaveResume],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      saveResume: (options) => requestSaveResume(Boolean(options?.bestEffort)),
+    }),
+    [requestSaveResume],
+  );
 
   useEffect(() => {
     resumeReadyRef.current = false;
@@ -481,9 +560,10 @@ function Player({
     video.addEventListener("loadedmetadata", onLoadedMetadata);
     void video.play().catch(() => undefined);
     return () => {
+      requestSaveResume(true);
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
     };
-  }, [episode, onError, onStatus]);
+  }, [episode, onError, onStatus, requestSaveResume]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -492,24 +572,38 @@ function Player({
     }
 
     const onPause = () => {
-      void saveResume();
+      requestSaveResume(false);
     };
     const onEnded = () => {
-      void saveResume();
+      requestSaveResume(false);
       if (!onEpisodeEnded()) {
         onStatus("再生完了を保存しました。");
       }
     };
     const onBeforeUnload = () => {
-      void saveResume();
+      requestSaveResume(true);
+    };
+    const onPageHide = () => {
+      requestSaveResume(true);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        requestSaveResume(true);
+      }
+    };
+    const onFreeze = () => {
+      requestSaveResume(true);
     };
 
     video.addEventListener("pause", onPause);
     video.addEventListener("ended", onEnded);
     window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    document.addEventListener("freeze", onFreeze as EventListener);
     const intervalId = setInterval(() => {
       if (!video.paused) {
-        void saveResume();
+        requestSaveResume(false);
       }
     }, 300000);
 
@@ -517,12 +611,15 @@ function Player({
       video.removeEventListener("pause", onPause);
       video.removeEventListener("ended", onEnded);
       window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      document.removeEventListener("freeze", onFreeze as EventListener);
       clearInterval(intervalId);
     };
-  }, [onEpisodeEnded, onStatus, saveResume]);
+  }, [onEpisodeEnded, onStatus, requestSaveResume]);
 
   return <video ref={videoRef} controls preload="metadata" className="player player-large" />;
-}
+});
 
 async function fetchRecentRecordings(): Promise<RecordingItem[]> {
   const response = await fetch("/api/recorded?limit=100&isHalfWidth=true");

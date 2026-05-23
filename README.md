@@ -7,7 +7,7 @@ Cloudflare Workers 上で `/.play/` 配下に追加フロントエンドを配�
 - `/.play/` で React フロントエンドを表示
 - `/.play/api/resume/:recordingId` で再生位置を D1 に保存/取得
 - トップページで「新規録画一覧」を表示し、サムネイル・説明冒頭・再生位置(未視聴/視聴済み含む)を確認して録画選択
-- 再生位置保存タイミングは 5 分ごと + pause/ended/unload
+- 再生位置保存タイミングは 5 分ごと + pause/ended + 画面遷移/バックグラウンド (visibilitychange/pagehide/unload)
 
 ## 前提
 
