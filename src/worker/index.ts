@@ -89,7 +89,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       });
     }
 
-    if (method === "PUT") {
+    if (method === "PUT" || method === "POST") {
       const payload = await parseJson(request);
       const positionSec = toNumber(payload?.positionSec);
       const durationSec = toNumber(payload?.durationSec);
