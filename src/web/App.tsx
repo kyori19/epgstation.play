@@ -48,6 +48,8 @@ type RuleResponse = {
   };
 };
 
+const CONTINUOUS_PLAY_STORAGE_KEY = "epgstation.play.continuousPlayEnabled";
+
 export function App() {
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname));
   const basePath = useMemo(() => getBasePath(window.location.pathname), []);
@@ -175,12 +177,26 @@ function PlaybackPage({
   const [ruleLabel, setRuleLabel] = useState<string | null>(null);
   const [loadingPlaylist, setLoadingPlaylist] = useState(false);
   const [playlistErrorMessage, setPlaylistErrorMessage] = useState<string | null>(null);
-  const [continuousPlayEnabled, setContinuousPlayEnabled] = useState(false);
+  const [continuousPlayEnabled, setContinuousPlayEnabled] = useState(() => {
+    try {
+      return sessionStorage.getItem(CONTINUOUS_PLAY_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const initialTitleRef = useRef<string | null>(null);
   const playerRef = useRef<PlayerHandle | null>(null);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(CONTINUOUS_PLAY_STORAGE_KEY, String(continuousPlayEnabled));
+    } catch {
+      // Keep the toggle usable when browser storage is unavailable.
+    }
+  }, [continuousPlayEnabled]);
 
   useEffect(() => {
     if (initialTitleRef.current === null) {
